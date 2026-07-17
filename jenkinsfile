@@ -1,0 +1,97 @@
+pipeline {
+    agent any
+
+    tools {
+        maven 'Maven3'
+    }
+
+    environment {
+        IMAGE_NAME = "javawebcalculator"
+        CONTAINER_NAME = "javawebcalculator"
+        HOST_PORT = "8082"
+    }
+
+    stages {
+
+        stage('Checkout') {
+            steps {
+                checkout scm
+            }
+        }
+
+        stage('Verify Tools') {
+            steps {
+                sh '''
+                    echo "Java Version"
+                    java -version
+
+                    echo "Maven Version"
+                    mvn -version
+
+                    echo "Docker Version"
+                    docker --version
+                '''
+            }
+        }
+
+        stage('Build WAR') {
+            steps {
+                sh '''
+                    mvn clean package
+                '''
+            }
+        }
+
+        stage('Run Unit Tests') {
+            steps {
+                sh '''
+                    mvn test
+                '''
+            }
+        }
+
+        stage('Build Docker Image') {
+            steps {
+                sh '''
+                    docker build \
+                    -t ${IMAGE_NAME}:${BUILD_NUMBER} \
+                    -t ${IMAGE_NAME}:latest .
+                '''
+            }
+        }
+
+        stage('Deploy') {
+            when {
+                branch 'master'
+            }
+
+            steps {
+                sh '''
+                    docker stop ${CONTAINER_NAME} || true
+                    docker rm ${CONTAINER_NAME} || true
+
+                    docker run -d \
+                    --name ${CONTAINER_NAME} \
+                    -p ${HOST_PORT}:8080 \
+                    ${IMAGE_NAME}:${BUILD_NUMBER}
+                '''
+            }
+        }
+    }
+
+    post {
+
+        success {
+            echo "Build Successful"
+            echo "Branch: ${env.BRANCH_NAME}"
+        }
+
+        failure {
+            echo "Build Failed"
+        }
+
+        always {
+            sh 'docker ps || true'
+        }
+    }
+}
